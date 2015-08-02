@@ -8,7 +8,7 @@
 PLAT= none
 
 CC= gcc
-CFLAGS= -O2 -Wall $(MYCFLAGS)
+CFLAGS= -O2 -Wall -DLUA_USER_H='"ltests.h"' $(MYCFLAGS)
 AR= ar rcu
 RANLIB= ranlib
 RM= rm -f
@@ -30,10 +30,10 @@ LIB_O=	lauxlib.o lbaselib.o ldblib.o liolib.o lmathlib.o loslib.o ltablib.o \
 	lstrlib.o loadlib.o linit.o
 
 LUA_T=	lua
-LUA_O=	lua.o
+LUA_O=	lua.o ltests.o
 
 LUAC_T=	luac
-LUAC_O=	luac.o print.o
+LUAC_O=	luac.o print.o ltests.o
 
 ALL_O= $(CORE_O) $(LIB_O) $(LUA_O) $(LUAC_O)
 ALL_T= $(LUA_A) $(LUA_T) $(LUAC_T)

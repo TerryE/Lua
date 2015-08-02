@@ -27,6 +27,7 @@ function checkout (s)
   local t = io.read("*a")
   io.input():close()
   assert(os.remove(out))
+  t = t:gsub(">>>.-\n","")
   if s ~= t then print(string.format("'%s' - '%s'\n", s, t)) end
   assert(s == t)
   return t
@@ -88,27 +89,26 @@ prepfile[[
 ]]
 RUN("lua - < %s > %s", prog, out)
 checkout("1\tnil\n")
-
 prepfile[[
 = (6*2-6) -- ===
 a 
 = 10
 print(a)
 = a]]
-RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
-checkout("6\n10\n10\n\n")
+RUN([[lua -e"_PROMPT='>>>' _PROMPT2='>>>'" -i < %s > %s]], prog, out)
+checkout("6\n10\n10\n")
 
 prepfile("a = [[b\nc\nd\ne]]\n=a")
 print(prog)
-RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
-checkout("b\nc\nd\ne\n\n")
+RUN([[lua -e"_PROMPT='>>>' _PROMPT2='>>>'" -i < %s > %s]], prog, out)
+checkout("b\nc\nd\ne\n")
 
-prompt = "alo"
+prompt = ">>>"
 prepfile[[ --
 a = 2
 ]]
 RUN([[lua "-e_PROMPT='%s'" -i < %s > %s]], prompt, prog, out)
-checkout(string.rep(prompt, 3).."\n")
+checkout("")
 
 s = [=[ -- 
 function f ( x ) 
@@ -126,9 +126,9 @@ assert( a == b )
 =f( 11 )  ]=]
 s = string.gsub(s, ' ', '\n\n')
 prepfile(s)
-RUN([[lua -e"_PROMPT='' _PROMPT2=''" -i < %s > %s]], prog, out)
-checkout("11\n1\t2\n\n")
-  
+RUN([[lua -e"_PROMPT='>>>' _PROMPT2='>>>'" -i < %s > %s]], prog, out)
+checkout("11\n1\t2\n")
+
 prepfile[[#comment in 1st line without \n at the end]]
 RUN("lua %s", prog)
 

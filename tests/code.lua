@@ -46,7 +46,7 @@ check(function ()
   local a,b,c
   local d; local e;
   a = nil; d=nil
-end, 'RETURN')
+end, 'LOADNIL', 'LOADNIL', 'RETURN')
 
 
 -- single return
@@ -61,10 +61,10 @@ check(function () while 1 do local a = -1 end end,
 'LOADK', 'JMP', 'RETURN')
 
 check(function () repeat local x = 1 until false end,
-'LOADK', 'JMP', 'RETURN')
+'LOADK', 'LOADBOOL', 'TEST', 'JMP', 'RETURN')
 
 check(function () repeat local x until nil end,
-'LOADNIL', 'JMP', 'RETURN')
+'LOADNIL', 'LOADBOOL', 'TEST', 'JMP', 'RETURN')
 
 check(function () repeat local x = 1 until true end,
 'LOADK', 'RETURN')

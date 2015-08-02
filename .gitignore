@@ -1,0 +1,8 @@
+*.o
+*.a
+*.swp
+*~
+*.*~
+lua
+luac
+core
