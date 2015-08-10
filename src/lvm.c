@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <stddef.h>  /*DEBUG */ 
+
 #define lvm_c
 #define LUA_CORE
 
@@ -25,7 +27,6 @@
 #include "ltable.h"
 #include "ltm.h"
 #include "lvm.h"
-
 
 
 /* limit for table tag-method chains (to avoid loops) */
@@ -56,6 +57,39 @@ int luaV_tostring (lua_State *L, StkId obj) {
   }
 }
 
+#ifdef LUA_OPTIMIZE_DEBUG
+/* See comments in companion routine lparser.c:repacklineinfo().  This may
+ * seem expensive but this is only accessed frequently in traceexec and the 
+ * while loop will be executed roughly half the number of non-blank source
+ * lines in the Lua function and these tend to be short.
+ */
+int luaV_getline (const Proto *f, int pc) {
+  int line = 1, thispc = 0, nextpc;
+  unsigned char *p, code;
+  for (p = f->lineinfo.packed; p; p++) {
+    code = *p;
+    if (code & 0x80) { /* line delta */
+      int delta = code & 0x1F;
+      unsigned char sign = code & 0x20;
+      while (code & 0x40) {
+        code = *++p;
+        lua_assert( code & 0x80);
+        delta = (delta << 6) + (code & 0x3F);
+      }
+      line += sign ? -1-delta : delta+1;         
+    } else {           /* 1..127 instructions on line */
+      nextpc = thispc + (code & 0x7F);
+      if (thispc <= pc && pc < nextpc) {
+        break;
+      }
+      thispc = nextpc;
+      line++;
+    }
+  }
+  lua_assert(p);
+  return line;
+}
+#endif
 
 static void traceexec (lua_State *L, const Instruction *pc) {
   lu_byte mask = L->hookmask;

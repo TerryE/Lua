@@ -15,6 +15,10 @@
 #include "lstate.h"
 #include "lundump.h"
 
+#ifdef LUA_OPTIMIZE_DEBUG
+#include <string.h>
+#endif
+
 typedef struct {
  lua_State* L;
  lua_Writer writer;
@@ -111,8 +115,25 @@ static void DumpConstants(const Proto* f, DumpState* D)
 static void DumpDebug(const Proto* f, DumpState* D)
 {
  int i,n;
+#ifdef LUA_OPTIMIZE_DEBUG
+ n = (D->strip || f->lineinfo.packed == NULL) ? 0: strlen(cast(char *,f->lineinfo.packed))+1;
+ DumpInt(n,D);
+//--eLua Align4(D);
+ if (n)
+  {
+  DumpBlock(f->lineinfo.packed, n, D);
+  }
+#else
+//--eLua  n= (D->strip) ? 0 : f->sizelineinfo;
+//--eLua  DumpInt(n,D);
+//--eLua  Align4(D);
+//--eLua  for (i=0; i<n; i++)
+//--eLua  {
+//--eLua   DumpInt(f->lineinfo[i],D);
+//--eLua  }
  n= (D->strip) ? 0 : f->sizelineinfo;
  DumpVector(f->lineinfo,n,sizeof(int),D);
+#endif
  n= (D->strip) ? 0 : f->sizelocvars;
  DumpInt(n,D);
  for (i=0; i<n; i++)

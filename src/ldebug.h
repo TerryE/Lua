@@ -13,7 +13,12 @@
 
 #define pcRel(pc, p)	(cast(int, (pc) - (p)->code) - 1)
 
-#define getline(f,pc)	(((f)->lineinfo) ? (f)->lineinfo[pc] : 0)
+#ifdef LUA_OPTIMIZE_DEBUG
+#  include "lvm.h"
+#  define getline(f,pc) (((f)->lineinfo.packed) ? luaV_getline((f), pc) : 0)
+#else
+#  define getline(f,pc) (((f)->lineinfo) ? (f)->lineinfo[pc] : 0)
+#endif
 
 #define resethookcount(L)	(L->hookcount = L->basehookcount)
 

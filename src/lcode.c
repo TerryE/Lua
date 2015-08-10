@@ -780,9 +780,20 @@ void luaK_posfix (FuncState *fs, BinOpr op, expdesc *e1, expdesc *e2) {
   }
 }
 
-
-void luaK_fixline (FuncState *fs, int line) {
+/*DEBUG*/ static FuncState *debuglastfs; static int debuglastline, debuglastpc, debuglastcnt=0; 
+void luaK_fixline (FuncState *fs, int line/*DEBUG*/, char *from) {
+#ifdef LUA_OPTIMIZE_DEBUG
+  fs->f->lineinfo.unpacked->info[fs->pc - 1] = line;
+/*DEBUG*/ assert (fs==debuglastfs && debuglastpc == fs->pc-1);
+  if (debuglastline == line) {
+    debuglastcnt++;
+  } else {
+    printf("FIXLINE %p %5i %5i %5i %s\n",fs->f, fs->pc-1, debuglastline, line, from);
+    debuglastcnt=0;
+  }
+#else
   fs->f->lineinfo[fs->pc - 1] = line;
+#endif
 }
 
 
@@ -794,12 +805,18 @@ static int luaK_code (FuncState *fs, Instruction i, int line) {
                   MAX_INT, "code size overflow");
   f->code[fs->pc] = i;
   /* save corresponding line information */
+#ifdef LUA_OPTIMIZE_DEBUG
+  luaM_growvector(fs->L, f->lineinfo.unpacked->info, fs->pc, f->lineinfo.unpacked->size, int,
+                  MAX_INT, "code size overflow");
+  f->lineinfo.unpacked->info[fs->pc] = line;
+/*DEBUG*/debuglastfs=fs; debuglastpc = fs->pc; debuglastline = line;
+#else
   luaM_growvector(fs->L, f->lineinfo, fs->pc, f->sizelineinfo, int,
                   MAX_INT, "code size overflow");
   f->lineinfo[fs->pc] = line;
+#endif
   return fs->pc++;
 }
-
 
 int luaK_codeABC (FuncState *fs, OpCode o, int a, int b, int c) {
   lua_assert(getOpMode(o) == iABC);

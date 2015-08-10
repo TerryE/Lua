@@ -138,9 +138,18 @@ static void LoadDebug(LoadState* S, Proto* f)
 {
  int i,n;
  n=LoadInt(S);
+#ifdef LUA_OPTIMIZE_DEBUG
+ if(n) {
+   f->lineinfo.packed=luaM_newvector(S->L,n,unsigned char);
+   LoadBlock(S,f->lineinfo.packed,n);
+ } else {
+   f->lineinfo.packed=NULL;
+ }
+#else
  f->lineinfo=luaM_newvector(S->L,n,int);
  f->sizelineinfo=n;
  LoadVector(S,f->lineinfo,n,sizeof(int));
+#endif
  n=LoadInt(S);
  f->locvars=luaM_newvector(S->L,n,LocVar);
  f->sizelocvars=n;
@@ -163,6 +172,9 @@ static Proto* LoadFunction(LoadState* S, TString* p)
  Proto* f;
  if (++S->L->nCcalls > LUAI_MAXCCALLS) error(S,"code too deep");
  f=luaF_newproto(S->L);
+#ifdef LUA_OPTIMIZE_DEBUG
+ f->lineinfo.unpacked = luaM_free(S->L, f->lineinfo.unpacked);  /* Load loads a packed info or none at all */ 
+#endif 
  setptvalue2s(S->L,S->L->top,f); incr_top(S->L);
  f->source=LoadString(S); if (f->source==NULL) f->source=p;
  f->linedefined=LoadInt(S);

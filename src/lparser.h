@@ -72,6 +72,10 @@ typedef struct FuncState {
   lu_byte nactvar;  /* number of active local variables */
   upvaldesc upvalues[LUAI_MAXUPVALUES];  /* upvalues */
   unsigned short actvar[LUAI_MAXVARS];  /* declared-variable stack */
+#ifdef LUA_OPTIMIZE_DEBUG
+  int *lineinfo;     /*vector format of line info only used during compilation */ 
+  int sizelineinfo;  /*size of line info */
+#endif
 } FuncState;
 
 

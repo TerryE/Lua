@@ -173,22 +173,43 @@ static void info_tailcall (lua_Debug *ar) {
   ar->nups = 0;
 }
 
-
 static void collectvalidlines (lua_State *L, Closure *f) {
   if (f == NULL || f->c.isC) {
     setnilvalue(L->top);
   }
   else {
     Table *t = luaH_new(L, 0, 0);
+#ifdef LUA_OPTIMIZE_DEBUG
+    /* For encoding scheme see comments in lparser.c:repacklineinfo() */
+    int line = 0;
+    unsigned char code, *p;
+    for (p = f->l.p->lineinfo.packed; *p; p++) {
+      code = *p;
+      if (code & 0x80) {
+        int delta = code & 0x1F;
+        unsigned char sign = code & 0x20;
+        while( code & 0x40) {
+          code = *++p;
+          lua_assert( code & 0x80);
+          delta = (delta << 6) + (code & 0x3F);
+        }
+        delta = sign ? -1-delta : delta+1;
+        line += delta;            
+      } else {
+        line++;
+        setbvalue(luaH_setnum(L, t, line), 1);
+      }
+    }
+#else
     int *lineinfo = f->l.p->lineinfo;
     int i;
     for (i=0; i<f->l.p->sizelineinfo; i++)
       setbvalue(luaH_setnum(L, t, lineinfo[i]), 1);
+#endif
     sethvalue(L, L->top, t); 
   }
   incr_top(L);
 }
-
 
 static int auxgetinfo (lua_State *L, const char *what, lua_Debug *ar,
                     Closure *f, CallInfo *ci) {
@@ -279,7 +300,9 @@ static int precheck (const Proto *pt) {
   check(!(pt->is_vararg & VARARG_NEEDSARG) ||
               (pt->is_vararg & VARARG_HASARG));
   check(pt->sizeupvalues <= pt->nups);
+#ifndef LUA_OPTIMIZE_DEBUG
   check(pt->sizelineinfo == pt->sizecode || pt->sizelineinfo == 0);
+#endif
   check(pt->sizecode > 0 && GET_OPCODE(pt->code[pt->sizecode-1]) == OP_RETURN);
   return 1;
 }

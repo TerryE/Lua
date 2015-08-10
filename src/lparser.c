@@ -6,6 +6,7 @@
 
 
 #include <string.h>
+#include <stdio.h>   /*DEBUG*/
 
 #define lparser_c
 #define LUA_CORE
@@ -24,8 +25,6 @@
 #include "lstate.h"
 #include "lstring.h"
 #include "ltable.h"
-
-
 
 #define hasmultret(k)		((k) == VCALL || (k) == VVARARG)
 
@@ -352,6 +351,100 @@ static void open_func (LexState *ls, FuncState *fs) {
   incr_top(L);
 }
 
+#ifdef LUA_OPTIMIZE_DEBUG
+static void repacklineinfo (lua_State *L, Proto *f) {
+  int size = 0, line = 0;
+  int *l = f->lineinfo.unpacked->info; 
+  int *endline = l + f->sizecode;
+  int *i, noinstr;
+  unsigned char *pli, *p;
+  /* 
+   * The current line number metadata uses a 4n byte vector to map a VM pc count onto the source
+   * line number for debug purposes.  This coding scheme uses a run length based a repeat of 
+   * (optional) line offset and a count of the number of instruction generated for that source 
+   * line which uses roughly an m byte vector where m is the number of non-blank source lines. 
+   * 
+   * Each source line which generates code has an instruction count. Instruction sequences of 
+   * up to 127 bytecodes are stored as a single byte. The rare cases of more than 127 bytecodes
+   * per line are stored in multiple bytes.
+   *
+   * An optional line offset is used to bump the line number between each line sequence.  The 
+   * default +1 is assumed between consecutive instruction counts. This line offset has the high
+   * bit set and is multibyte for line offsets of more than a 32 line offset.  All line delta 
+   * bytes are of the form (in binary):
+   *   10snnnnnn
+   *   11snnnnnn 10nnnnnn
+   *   11snnnnnn 11nnnnnn 10nnnnnn etc.
+   * where s = 0 for a positive delta and s = 1 for a negative delta.
+   *
+   * This encoding scheme has an o(N) access cost instead of o(1) (e.g. when printing error 
+   * messages) but reduces the the code size by roughly 40% by a typical source file.  It has 
+   * been design to be (i) easy to encode and decode; (ii) fast for normal code; (iii) 0x00 is 
+   * never used so can be reserved as a stop code so that strlen() can be used to deterimine 
+   * the length; (iv) there are no arbitrary maximum size limits.
+   */
+  lua_assert(f->lineinfo.unpacked->zeroFlag == 0x80808080);
+  
+  do {  /* Two passes; the first computes the size of the vector */ 
+    int step = (*l - line) - 1;
+    if (step != 0) {
+      step = (step < 0) ? 1 - step : step - 1;
+      size++;
+      step >>= 5;
+      while (step) {size++; step >>= 6;} 
+    }
+    for (line = *l, i = l+1; *i == line; i++) {}
+    if (i>endline) i = endline;
+    noinstr = i-l;
+    l = i;
+    while (noinstr > 127) { size+=2; noinstr -= 127; }
+    size++;
+  } while (l<endline);  
+  
+  pli = p = cast(unsigned char *, luaM_malloc(L, size+1)) ;
+  line = 0;
+  l = f->lineinfo.unpacked->info;
+  
+  do {  /* Second pass fills the vector */ 
+    int step = (*l - line) - 1;
+    if (step != 0) {
+      if (step > 0) {
+        step--;
+        *p++ = 0x80 + cast(unsigned char, step & 0x1F);     
+      } else {
+        step = 1-step;
+        *p++ = 0xA0 + cast(unsigned char, step & 0x1F);  
+      }
+      step >>= 5;
+      while (step) {
+        p[-1] |= 0x40;
+        step >>= 6;
+        *p++ = 0x80 + cast(unsigned char, step & 0x3F);     
+      }
+    } 
+    for (line = *l, i = l+1; *i == line; i++) {}
+    if (i>endline) i = endline;
+    noinstr = i-l;
+    l = i; 
+    while (noinstr > 127) {
+      *p++ = 0x7F; *p++ = 0xA1;   /* 127 opcodes and bump line number by -1(+1) */   
+      noinstr -= 127;
+    }
+    *p++ = cast(unsigned char, noinstr);
+  } while (l<endline);
+  *p++ = '\0';
+  lua_assert (p - pli == size+1);
+#if 0  /*DEBUG*/
+do {int n; 
+printf("LINES=");for (n=0; n<f->sizecode; n++) printf("%i ",f->lineinfo.unpacked->info[n]);
+printf("\nPACKED=");for (n=0; n<size; n++) printf("%02x ",pli[n]);printf("\n");
+}while (0);
+#endif
+  luaM_freearray(L, f->lineinfo.unpacked->info, f->lineinfo.unpacked->size, int);
+  luaM_free(L, f->lineinfo.unpacked);  
+  f->lineinfo.packed = pli;
+}
+#endif
 
 static void close_func (LexState *ls) {
   lua_State *L = ls->L;
@@ -361,8 +454,17 @@ static void close_func (LexState *ls) {
   luaK_ret(fs, 0, 0);  /* final return */
   luaM_reallocvector(L, f->code, f->sizecode, fs->pc, Instruction);
   f->sizecode = fs->pc;
+#ifdef LUA_OPTIMIZE_DEBUG
+  if (f->lineinfo.unpacked->info) {
+    repacklineinfo(L, f);
+  } else {
+    luaM_free(L, f->lineinfo.unpacked);  
+    f->lineinfo.packed = NULL;
+  }
+#else
   luaM_reallocvector(L, f->lineinfo, f->sizelineinfo, fs->pc, int);
   f->sizelineinfo = fs->pc;
+#endif
   luaM_reallocvector(L, f->k, f->sizek, fs->nk, TValue);
   f->sizek = fs->nk;
   luaM_reallocvector(L, f->p, f->sizep, fs->np, Proto *);
@@ -379,6 +481,20 @@ static void close_func (LexState *ls) {
   L->top -= 2;  /* remove table and prototype from the stack */
 }
 
+#ifdef LUA_OPTIMIZE_DEBUG
+static void compile_stripdebug(lua_State *L, Proto *f) { 
+  lua_pushlightuserdata(L, &luaF_stripdebug );
+  lua_gettable(L, LUA_REGISTRYINDEX);
+  if (!lua_isnil(L, -1)) {
+    int level = lua_tointeger(L, -1);
+    if (level > 1) {
+      int len = luaF_stripdebug(L, f, level, 1);
+      UNUSED(len);
+    }
+  }
+  lua_pop(L, 1);
+}
+#endif
 
 Proto *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff, const char *name) {
   struct LexState lexstate;
@@ -391,12 +507,14 @@ Proto *luaY_parser (lua_State *L, ZIO *z, Mbuffer *buff, const char *name) {
   chunk(&lexstate);
   check(&lexstate, TK_EOS);
   close_func(&lexstate);
+#ifdef LUA_OPTIMIZE_DEBUG
+  compile_stripdebug(L, funcstate.f);
+#endif
   lua_assert(funcstate.prev == NULL);
   lua_assert(funcstate.f->nups == 0);
   lua_assert(lexstate.fs == NULL);
   return funcstate.f;
 }
-
 
 
 /*============================================================*/
@@ -649,7 +767,7 @@ static void funcargs (LexState *ls, expdesc *f) {
     nparams = fs->freereg - (base+1);
   }
   init_exp(f, VCALL, luaK_codeABC(fs, OP_CALL, base, nparams+1, 2));
-  luaK_fixline(fs, line);
+  luaK_fixline(fs, line/*DEBUG*/, "CALL");
   fs->freereg = base+1;  /* call remove function and arguments and leaves
                             (unless changed) one result */
 }
@@ -1059,7 +1177,7 @@ static void forbody (LexState *ls, int base, int line, int nvars, int isnum) {
   luaK_patchtohere(fs, prep);
   endfor = (isnum) ? luaK_codeAsBx(fs, OP_FORLOOP, base, NO_JUMP) :
                      luaK_codeABC(fs, OP_TFORLOOP, base, 0, nvars);
-  luaK_fixline(fs, line);  /* pretend that `OP_FOR' starts the loop */
+  luaK_fixline(fs, line/*DEBUG*/, isnum ? "FORLOOP" : "TFORLOOP");  /* pretend that `OP_FOR' starts the loop */
   luaK_patchlist(fs, (isnum ? endfor : luaK_jump(fs)), prep + 1);
 }
 
@@ -1217,7 +1335,7 @@ static void funcstat (LexState *ls, int line) {
   needself = funcname(ls, &v);
   body(ls, &b, needself, line);
   luaK_storevar(ls->fs, &v, &b);
-  luaK_fixline(ls->fs, line);  /* definition `happens' in the first line */
+  luaK_fixline(ls->fs, line/*DEBUG*/, "funcstat");  /* definition `happens' in the first line */
 }
 
 

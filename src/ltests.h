@@ -62,12 +62,11 @@ int lua_checkpc (lua_State *L, pCallInfo ci);
 struct L_EXTRA { int lock; int *plock; };
 #define LUAI_EXTRASPACE		sizeof(struct L_EXTRA)
 #define getlock(l)	(cast(struct L_EXTRA *, l) - 1)
-#define luai_userstateopen(l)  \
-	(getlock(l)->lock = 0, getlock(l)->plock = &(getlock(l)->lock))
-#define luai_userstatethread(l,l1)  (getlock(l1)->plock = getlock(l)->plock)
-#define lua_lock(l)     lua_assert((*getlock(l)->plock)++ == 0)
-#define lua_unlock(l)   lua_assert(--(*getlock(l)->plock) == 0)
-
+#define luai_userstateopen(l) ((void) 0)
+//	(getlock(l)->lock = 0, getlock(l)->plock = &(getlock(l)->lock))
+#define luai_userstatethread(l,l1)  ((void) 0) //(getlock(l1)->plock = getlock(l)->plock)
+#define lua_lock(l)    ((void) 0) // lua_assert((*getlock(l)->plock)++ == 0)
+#define lua_unlock(l)  ((void) 0) // lua_assert(--(*getlock(l)->plock) == 0)
 
 int luaB_opentests (lua_State *L);
 

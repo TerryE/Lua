@@ -18,8 +18,11 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
-
-
+#include "lobject.h"
+#include "lstate.h"
+#ifdef LUA_OPTIMIZE_DEBUG   
+#include "lfunc.h"
+#endif
 
 
 /*
@@ -288,6 +291,91 @@ static int luaB_loadfile (lua_State *L) {
 }
 
 
+#ifdef LUA_OPTIMIZE_DEBUG   
+/* stripdebug(level[, function]).  
+ * level:    1 don't discard debug
+ *           2 discard Local and Upvalue debug info
+ *           3 discard Local, Upvalue and lineno debug info.
+ * function: Function to be stripped as per setfenv except 0 not permitted. 
+ * If function is omitted, this is the default setting for future compiles
+ * The function returns an estimated integer count of the bytes stripped.
+ */
+static int luaB_stripdebug (lua_State *L) {
+  const int level = luaL_checkint(L, 1);
+ 
+  if ((level <= 0) || (level > 3)) luaL_argerror(L, 1, "must in range 1-3");
+  
+  if (L->top == L->base + 1) {
+    /* Store the default level in the registry if no function parameter */ 
+    lua_pushlightuserdata(L, &luaF_stripdebug);
+    lua_pushinteger(L, level);
+    lua_settable(L, LUA_REGISTRYINDEX);
+    lua_settop(L,0); 
+    return 0;
+  }
+
+  if (level == 1) {
+    lua_settop(L,0); 
+    lua_pushinteger(L, 0);
+    return 1;
+  }
+
+  if (!lua_isfunction(L, 2)) {
+    int scope = luaL_checkint(L, 2);
+    if (scope > 0) {
+      /* if the function parameter is a +ve integer then climb to find function */
+      lua_Debug ar;
+      lua_pop(L, 1); /* pop level as getinfo will replace it by the function */ 
+      if (lua_getstack(L, scope, &ar)) {
+        lua_getinfo(L, "f", &ar);
+      }
+    }
+  }
+  
+  if(!lua_isfunction(L, 2) || lua_iscfunction(L, -1)) luaL_argerror(L, 2, "must be a Lua Function");   
+  // lua_lock(L);
+  Proto *f = clvalue(L->base + 1)->l.p;
+  // lua_unlock(L);
+  lua_settop(L,0); 
+  lua_pushinteger(L, luaF_stripdebug(L, f, level, 1));
+  return 1;
+}
+    
+#if 0
+ 
+    StkId o = index2adr(L, 2);
+  api_checkvalidindex(L, o);
+ 
+ 
+  api_check(L, ttistable(L->top - 1));
+  switch (ttype(o)) {
+    case LUA_TFUNCTION: 
+      clvalue(o)->c.env = hvalue(L->top - 1);
+      break;
+  }
+  if (res) luaC_objbarrier(L, gcvalue(o), hvalue(L->top - 1));
+  L->top--;
+  lua_unlock(L);
+  return res;
+
+  switch (
+      break;
+    case 2:
+      if (level == 1) break;
+      t2 = lua_type(L, 2);
+      if (t2 == LUA_TFUNCTION) {
+        
+        break;   
+      } else if (t2 == LUA_TNUMBER && luaL_checkint(L, 2) == 0) {
+        len = luaF_stripdebug(L, curr_func(L)->l.p, level, 1);
+        break;
+      }
+    default:
+    luaL_error(L, "invalid  arguments");    
+  }
+#endif  
+#endif
+
 /*
 ** Reader for generic `load' function: `lua_load' uses the
 ** stack for internal stuff, so the reader cannot change the
@@ -464,6 +552,9 @@ static const luaL_Reg base_funcs[] = {
   {"select", luaB_select},
   {"setfenv", luaB_setfenv},
   {"setmetatable", luaB_setmetatable},
+#ifdef LUA_OPTIMIZE_DEBUG   
+  {"stripdebug", luaB_stripdebug},
+#endif
   {"tonumber", luaB_tonumber},
   {"tostring", luaB_tostring},
   {"type", luaB_type},

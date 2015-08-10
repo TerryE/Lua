@@ -18,7 +18,9 @@
 #include "lobject.h"
 #include "lstate.h"
 
-
+#ifdef LUA_OPTIMIZE_DEBUG
+#include <string.h>
+#endif
 
 Closure *luaF_newCclosure (lua_State *L, int nelems, Table *e) {
   Closure *c = cast(Closure *, luaM_malloc(L, sizeCclosure(nelems)));
@@ -121,19 +123,27 @@ Proto *luaF_newproto (lua_State *L) {
   f->sizep = 0;
   f->code = NULL;
   f->sizecode = 0;
-  f->sizelineinfo = 0;
   f->sizeupvalues = 0;
   f->nups = 0;
   f->upvalues = NULL;
   f->numparams = 0;
   f->is_vararg = 0;
   f->maxstacksize = 0;
-  f->lineinfo = NULL;
   f->sizelocvars = 0;
   f->locvars = NULL;
   f->linedefined = 0;
   f->lastlinedefined = 0;
   f->source = NULL;
+#ifdef LUA_OPTIMIZE_DEBUG
+  f->lineinfo.unpacked = NULL;
+  f->lineinfo.unpacked = luaM_new(L, UnpackedLine);
+  f->lineinfo.unpacked->zeroFlag = 0x80808080;
+  f->lineinfo.unpacked->info = NULL;
+  f->lineinfo.unpacked->size = 0;
+#else
+  f->lineinfo = NULL;
+  f->sizelineinfo = 0;
+#endif
   return f;
 }
 
@@ -142,7 +152,20 @@ void luaF_freeproto (lua_State *L, Proto *f) {
   luaM_freearray(L, f->code, f->sizecode, Instruction);
   luaM_freearray(L, f->p, f->sizep, Proto *);
   luaM_freearray(L, f->k, f->sizek, TValue);
+#ifdef LUA_OPTIMIZE_DEBUG
+  if (f->lineinfo.unpacked) {
+    if (f->lineinfo.unpacked->zeroFlag != 0x80808080) { 
+      /* the first byte of the unpacked vector can't be zero, so this is the packed variant */ 
+      luaM_freearray(L, f->lineinfo.packed, strlen(cast(char *, f->lineinfo.packed))+1, unsigned char);    
+    } else { 
+      /* This is the unpacked variant.  (This only occurs on error cleanup.) */
+      luaM_freearray(L, f->lineinfo.unpacked->info, f->lineinfo.unpacked->size, int);
+      luaM_free(L, f->lineinfo.unpacked);  
+    }
+  }
+#else
   luaM_freearray(L, f->lineinfo, f->sizelineinfo, int);
+#endif
   luaM_freearray(L, f->locvars, f->sizelocvars, struct LocVar);
   luaM_freearray(L, f->upvalues, f->sizeupvalues, TString *);
   luaM_free(L, f);
@@ -155,6 +178,37 @@ void luaF_freeclosure (lua_State *L, Closure *c) {
   luaM_freemem(L, c, size);
 }
 
+#ifdef LUA_OPTIMIZE_DEBUG
+static int stripdebug (lua_State *L, Proto *f, int level) {
+  int len = 0, sizepackedlineinfo;
+  TString* dummy;
+  switch (level) {
+    case 3:
+      sizepackedlineinfo = strlen(cast(char *, f->lineinfo.packed))+1;
+      f->lineinfo.packed = luaM_freearray(L, f->lineinfo.packed, sizepackedlineinfo, unsigned char);
+      len += sizepackedlineinfo;
+    case 2:
+      len += f->sizelocvars * (sizeof(struct LocVar) + sizeof(dummy->tsv) + sizeof(struct LocVar *));
+      f->locvars = luaM_freearray(L, f->locvars, f->sizelocvars, struct LocVar);
+      f->upvalues = luaM_freearray(L, f->upvalues, f->sizeupvalues, TString *);
+      len += f->sizelocvars * (sizeof(struct LocVar) + sizeof(dummy->tsv) + sizeof(struct LocVar *)) +
+             f->sizeupvalues * (sizeof(dummy->tsv) + sizeof(TString *));
+      f->sizelocvars = 0;
+      f->sizeupvalues = 0;
+  }
+  return len;
+}
+
+/* This is a recursive function so it's stack size has been kept to a minimum! */
+LUAI_FUNC int luaF_stripdebug (lua_State *L, Proto *f, int level, int recv){
+  int len = 0, i;
+  if (recv != 0 && f->sizep != 0) {
+    for(i=0;i<f->sizep;i++) len += luaF_stripdebug(L, f->p[i], level, recv);
+  }
+  len += stripdebug (L, f, level);
+  return len;
+}
+#endif
 
 /*
 ** Look for n-th local variable at line `line' in function `func'.
