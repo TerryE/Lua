@@ -315,7 +315,7 @@ static l_mem propagatemark (global_State *g) {
                              sizeof(LocVar) * p->sizelocvars +
                              sizeof(TString *) * p->sizeupvalues +
 #ifdef LUA_OPTIMIZE_DEBUG
-                             (p->lineinfo.packed ? strlen(cast(char *, p->lineinfo.packed))+1 : 0);
+                             (p->packedlineinfo ? strlen(cast(char *, p->packedlineinfo))+1 : 0);
 #else
                              sizeof(int) * p->sizelineinfo;
 #endif

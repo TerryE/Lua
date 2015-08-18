@@ -73,8 +73,10 @@ typedef struct FuncState {
   upvaldesc upvalues[LUAI_MAXUPVALUES];  /* upvalues */
   unsigned short actvar[LUAI_MAXVARS];  /* declared-variable stack */
 #ifdef LUA_OPTIMIZE_DEBUG
-  int *lineinfo;     /*vector format of line info only used during compilation */ 
-  int sizelineinfo;  /*size of line info */
+  int packedlineinfoSize; /* only used during compilation for line info */
+  int lastline;           /* ditto */
+  int lastlineOffset;     /* ditto */
+  int lineinfoLastPC;     /* ditto */
 #endif
 } FuncState;
 

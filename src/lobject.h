@@ -222,13 +222,6 @@ typedef union Udata {
   } uv;
 } Udata;
 
-#ifdef LUA_OPTIMIZE_DEBUG
-typedef struct {
-    int zeroFlag;
-    int *info;
-    int size;
-  } UnpackedLine;
-#endif
 
 /*
 ** Function Prototypes
@@ -240,10 +233,7 @@ typedef struct Proto {
   Instruction *code;
   struct Proto **p;  /* functions defined inside the function */
 #ifdef LUA_OPTIMIZE_DEBUG
-  union {
-  unsigned char *packed;   /* map from opcodes to source lines */
-  UnpackedLine *unpacked;  /* map from opcodes to source lines */
-  } lineinfo;
+  unsigned char *packedlineinfo;
 #else
   int *lineinfo;  /* map from opcodes to source lines */
 #endif

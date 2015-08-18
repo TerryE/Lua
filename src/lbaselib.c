@@ -18,13 +18,15 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+
+#ifdef LUA_OPTIMIZE_DEBUG   
 #include "lobject.h"
 #include "lstate.h"
-#ifdef LUA_OPTIMIZE_DEBUG   
+#include "ldebug.h"
 #include "lfunc.h"
 #endif
-
-
+ 
+ 
 /*
 ** If your system does not support `stdout', you can just remove this function.
 ** If you need, you can define your own `print' function, following this
@@ -307,7 +309,7 @@ static int luaB_stripdebug (lua_State *L) {
   
   if (L->top == L->base + 1) {
     /* Store the default level in the registry if no function parameter */ 
-    lua_pushlightuserdata(L, &luaF_stripdebug);
+    lua_pushlightuserdata(L, &luaG_stripdebug);
     lua_pushinteger(L, level);
     lua_settable(L, LUA_REGISTRYINDEX);
     lua_settop(L,0); 
@@ -337,43 +339,9 @@ static int luaB_stripdebug (lua_State *L) {
   Proto *f = clvalue(L->base + 1)->l.p;
   // lua_unlock(L);
   lua_settop(L,0); 
-  lua_pushinteger(L, luaF_stripdebug(L, f, level, 1));
+  lua_pushinteger(L, luaG_stripdebug(L, f, level, 1));
   return 1;
 }
-    
-#if 0
- 
-    StkId o = index2adr(L, 2);
-  api_checkvalidindex(L, o);
- 
- 
-  api_check(L, ttistable(L->top - 1));
-  switch (ttype(o)) {
-    case LUA_TFUNCTION: 
-      clvalue(o)->c.env = hvalue(L->top - 1);
-      break;
-  }
-  if (res) luaC_objbarrier(L, gcvalue(o), hvalue(L->top - 1));
-  L->top--;
-  lua_unlock(L);
-  return res;
-
-  switch (
-      break;
-    case 2:
-      if (level == 1) break;
-      t2 = lua_type(L, 2);
-      if (t2 == LUA_TFUNCTION) {
-        
-        break;   
-      } else if (t2 == LUA_TNUMBER && luaL_checkint(L, 2) == 0) {
-        len = luaF_stripdebug(L, curr_func(L)->l.p, level, 1);
-        break;
-      }
-    default:
-    luaL_error(L, "invalid  arguments");    
-  }
-#endif  
 #endif
 
 /*

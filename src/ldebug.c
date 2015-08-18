@@ -178,27 +178,32 @@ static void collectvalidlines (lua_State *L, Closure *f) {
     setnilvalue(L->top);
   }
   else {
+  #  define INFO_FILL_BYTE   0x7F
+#  define INFO_DELTA_MASK  0x80
+#  define INFO_SIGN_MASK   0x40
+#  define INFO_DELTA_6BITS 0x3F
+#  define INFO_DELTA_7BITS 0x7F
+#  define INFO_MAX_LINECNT  126
+
     Table *t = luaH_new(L, 0, 0);
 #ifdef LUA_OPTIMIZE_DEBUG
-    /* For encoding scheme see comments in lparser.c:repacklineinfo() */
     int line = 0;
-    unsigned char code, *p;
-    for (p = f->l.p->lineinfo.packed; *p; p++) {
-      code = *p;
-      if (code & 0x80) {
-        int delta = code & 0x1F;
-        unsigned char sign = code & 0x20;
-        while( code & 0x40) {
-          code = *++p;
-          lua_assert( code & 0x80);
-          delta = (delta << 6) + (code & 0x3F);
+    unsigned char *p;
+    
+    for (p = f->l.p->packedlineinfo; *p && *p != INFO_FILL_BYTE; ) {
+      if (*p & INFO_DELTA_MASK) { /* line delta */
+        int delta = *p & INFO_DELTA_6BITS;
+        unsigned char sign = *p++ & INFO_SIGN_MASK;
+        int shift;
+        for (shift = 6; *p & INFO_DELTA_MASK; p++, shift += 7) {
+          delta += (*p & INFO_DELTA_7BITS)<<shift;
         }
-        delta = sign ? -1-delta : delta+1;
-        line += delta;            
+        line += sign ? -delta : delta+2;
       } else {
         line++;
-        setbvalue(luaH_setnum(L, t, line), 1);
       }
+     p++;
+     setbvalue(luaH_setnum(L, t, line), 1);
     }
 #else
     int *lineinfo = f->l.p->lineinfo;
@@ -210,6 +215,71 @@ static void collectvalidlines (lua_State *L, Closure *f) {
   }
   incr_top(L);
 }
+
+#ifdef LUA_OPTIMIZE_DEBUG
+/* 
+ * This may seem expensive but this is only accessed frequently in traceexec
+ * and the while loop will be executed roughly half the number of non-blank
+ * source lines in the Lua function and these tend to be short.
+ */
+int luaG_getline (const Proto *f, int pc) {
+  int line = 0, thispc = 0, nextpc;
+  unsigned char *p;
+  
+  for (p = f->packedlineinfo; *p && *p != INFO_FILL_BYTE;) {
+    if (*p & INFO_DELTA_MASK) { /* line delta */
+      int delta = *p & INFO_DELTA_6BITS;
+      unsigned char sign = *p++ & INFO_SIGN_MASK;
+      int shift;
+      for (shift = 6; *p & INFO_DELTA_MASK; p++, shift += 7) {
+        delta += (*p & INFO_DELTA_7BITS)<<shift;
+      }
+      line += sign ? -delta : delta+2;
+    } else {
+      line++;
+    }
+    lua_assert(*p<127);
+    nextpc = thispc + *p++;  
+    if (thispc <= pc && pc < nextpc) {
+      return line;
+    }
+    thispc = nextpc;
+  }
+  lua_assert(0); 
+  return 0;
+}
+
+static int stripdebug (lua_State *L, Proto *f, int level) {
+  int len = 0, sizepackedlineinfo;
+  TString* dummy;
+  switch (level) {
+    case 3:
+      sizepackedlineinfo = strlen(cast(char *, f->packedlineinfo))+1;
+      f->packedlineinfo = luaM_freearray(L, f->packedlineinfo, sizepackedlineinfo, unsigned char);
+      len += sizepackedlineinfo;
+    case 2:
+      len += f->sizelocvars * (sizeof(struct LocVar) + sizeof(dummy->tsv) + sizeof(struct LocVar *));
+      f->locvars = luaM_freearray(L, f->locvars, f->sizelocvars, struct LocVar);
+      f->upvalues = luaM_freearray(L, f->upvalues, f->sizeupvalues, TString *);
+      len += f->sizelocvars * (sizeof(struct LocVar) + sizeof(dummy->tsv) + sizeof(struct LocVar *)) +
+             f->sizeupvalues * (sizeof(dummy->tsv) + sizeof(TString *));
+      f->sizelocvars = 0;
+      f->sizeupvalues = 0;
+  }
+  return len;
+}
+
+/* This is a recursive function so it's stack size has been kept to a minimum! */
+LUAI_FUNC int luaG_stripdebug (lua_State *L, Proto *f, int level, int recv){
+  int len = 0, i;
+  if (recv != 0 && f->sizep != 0) {
+    for(i=0;i<f->sizep;i++) len += luaG_stripdebug(L, f->p[i], level, recv);
+  }
+  len += stripdebug (L, f, level);
+  return len;
+}
+#endif
+
 
 static int auxgetinfo (lua_State *L, const char *what, lua_Debug *ar,
                     Closure *f, CallInfo *ci) {

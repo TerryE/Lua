@@ -116,12 +116,12 @@ static void DumpDebug(const Proto* f, DumpState* D)
 {
  int i,n;
 #ifdef LUA_OPTIMIZE_DEBUG
- n = (D->strip || f->lineinfo.packed == NULL) ? 0: strlen(cast(char *,f->lineinfo.packed))+1;
+ n = (D->strip || f->packedlineinfo == NULL) ? 0: strlen(cast(char *,f->packedlineinfo))+1;
  DumpInt(n,D);
 //--eLua Align4(D);
  if (n)
   {
-  DumpBlock(f->lineinfo.packed, n, D);
+  DumpBlock(f->packedlineinfo, n, D);
   }
 #else
 //--eLua  n= (D->strip) ? 0 : f->sizelineinfo;
