@@ -434,6 +434,18 @@ static int listcode (lua_State *L) {
   return 1;
 }
 
+static int listlocals (lua_State *L) {
+  Proto *p;
+  int pc = luaL_checkint(L, 2) - 1;
+  int i = 0;
+  const char *name;
+  luaL_argcheck(L, lua_isfunction(L, 1) && !lua_iscfunction(L, 1),
+                 1, "Lua function expected");
+  p = clvalue(obj_at(L, 1))->l.p;
+  while ((name = luaF_getlocalname(p, ++i, pc)) != NULL)
+    lua_pushstring(L, name);
+  return i-1;
+}
 
 static int listk (lua_State *L) {
   Proto *p;
@@ -449,19 +461,46 @@ static int listk (lua_State *L) {
   return 1;
 }
 
-
-static int listlocals (lua_State *L) {
-  Proto *p;
-  int pc = luaL_checkint(L, 2) - 1;
-  int i = 0;
-  const char *name;
-  luaL_argcheck(L, lua_isfunction(L, 1) && !lua_iscfunction(L, 1),
-                 1, "Lua function expected");
-  p = clvalue(obj_at(L, 1))->l.p;
-  while ((name = luaF_getlocalname(p, ++i, pc)) != NULL)
-    lua_pushstring(L, name);
-  return i-1;
+static void listp (lua_State *L, Proto *f) {
+  int i;
+  lua_createtable(L, 6 + f->sizep, 0);
+#ifdef LUA_OPTIMIZE_DEBUG
+  setnameval(L, "lineinfo", f->packedlineinfo ? strlen(cast(char *, f->packedlineinfo)) : 0);
+#else
+  setnameval(L, "lineinfo", f->sizelineinfo);
+#endif
+  setnameval(L, "sizecode",  f->sizecode);
+  setnameval(L, "sizek", f->sizek);
+  setnameval(L, "sizep", f->sizep);
+  setnameval(L, "sizeupvalues",  f->sizeupvalues);
+  setnameval(L, "sizelocvars", f->sizelocvars);
+  for (i=0; i<f->sizep; i++) {
+    listp(L, f->p[i]);
+    lua_rawseti(L, -2, i);
+  }
 }
+
+static int get_funcinfo (lua_State *L) {
+  if (lua_isfunction(L, 1)) {
+    luaL_argcheck(L, !lua_iscfunction(L, 1), 1, "Lua function expected");
+  } else {
+    lua_Debug ar;
+    int level = luaL_checkint(L, 1);
+    luaL_argcheck(L, level >= 0, 1, "level must be non-negative");
+    lua_pop(L, 1);
+    if (lua_getstack(L, level, &ar) == 0)
+      luaL_argerror(L, 1, "invalid level");
+    lua_getinfo(L, "f", &ar);
+    if (lua_isnil(L, -1) || lua_iscfunction(L, -1))
+      luaL_error(L, "no Lua function at level %d",
+                    level);
+  }                
+ 
+   listp(L, clvalue(obj_at(L, 1))->l.p);
+  return 1;
+}
+
+
 
 /* }====================================================== */
 
@@ -1091,6 +1130,7 @@ static const struct luaL_Reg tests_funcs[] = {
   {"gccolor", get_gccolor},
   {"gcstate", gcstate},
   {"getref", getref},
+  {"getfuncinfo", get_funcinfo},
   {"gsub", auxgsub},
   {"hash", hash_query},
   {"int2fb", int2fb_aux},
