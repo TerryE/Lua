@@ -294,19 +294,31 @@ static int luaB_loadfile (lua_State *L) {
 
 
 #ifdef LUA_OPTIMIZE_DEBUG   
-/* stripdebug(level[, function]).  
+/* stripdebug([level[, function]]).  
  * level:    1 don't discard debug
  *           2 discard Local and Upvalue debug info
  *           3 discard Local, Upvalue and lineno debug info.
  * function: Function to be stripped as per setfenv except 0 not permitted. 
+ * If no arguments then the current default setting is returned.
  * If function is omitted, this is the default setting for future compiles
  * The function returns an estimated integer count of the bytes stripped.
  */
 static int luaB_stripdebug (lua_State *L) {
-  const int level = luaL_checkint(L, 1);
- 
-  if ((level <= 0) || (level > 3)) luaL_argerror(L, 1, "must in range 1-3");
+  int level;
+
+  if (L->top == L->base) {
+    lua_pushlightuserdata(L, &luaG_stripdebug );
+    lua_gettable(L, LUA_REGISTRYINDEX);
+    if (lua_isnil(L, -1)) {
+      lua_pop(L, 1);
+      lua_pushinteger(L, LUA_OPTIMIZE_DEBUG);
+    }
+    return 1;
+  }
   
+  level = luaL_checkint(L, 1); 
+  if ((level <= 0) || (level > 3)) luaL_argerror(L, 1, "must in range 1-3"); 
+
   if (L->top == L->base + 1) {
     /* Store the default level in the registry if no function parameter */ 
     lua_pushlightuserdata(L, &luaG_stripdebug);
