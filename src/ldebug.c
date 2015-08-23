@@ -188,22 +188,23 @@ static void collectvalidlines (lua_State *L, Closure *f) {
     Table *t = luaH_new(L, 0, 0);
 #ifdef LUA_OPTIMIZE_DEBUG
     int line = 0;
-    unsigned char *p;
-    
-    for (p = f->l.p->packedlineinfo; *p && *p != INFO_FILL_BYTE; ) {
-      if (*p & INFO_DELTA_MASK) { /* line delta */
-        int delta = *p & INFO_DELTA_6BITS;
-        unsigned char sign = *p++ & INFO_SIGN_MASK;
-        int shift;
-        for (shift = 6; *p & INFO_DELTA_MASK; p++, shift += 7) {
-          delta += (*p & INFO_DELTA_7BITS)<<shift;
+    unsigned char *p = f->l.p->packedlineinfo;
+    if (p) {
+      for (; *p && *p != INFO_FILL_BYTE; ) {
+        if (*p & INFO_DELTA_MASK) { /* line delta */
+          int delta = *p & INFO_DELTA_6BITS;
+          unsigned char sign = *p++ & INFO_SIGN_MASK;
+          int shift;
+          for (shift = 6; *p & INFO_DELTA_MASK; p++, shift += 7) {
+            delta += (*p & INFO_DELTA_7BITS)<<shift;
+          }
+          line += sign ? -delta : delta+2;
+        } else {
+          line++;
         }
-        line += sign ? -delta : delta+2;
-      } else {
-        line++;
+       p++;
+       setbvalue(luaH_setnum(L, t, line), 1);
       }
-     p++;
-     setbvalue(luaH_setnum(L, t, line), 1);
     }
 #else
     int *lineinfo = f->l.p->lineinfo;

@@ -392,16 +392,16 @@ static void close_func (LexState *ls) {
 
 #ifdef LUA_OPTIMIZE_DEBUG
 static void compile_stripdebug(lua_State *L, Proto *f) { 
+  int level;
   lua_pushlightuserdata(L, &luaG_stripdebug );
   lua_gettable(L, LUA_REGISTRYINDEX);
-  if (!lua_isnil(L, -1)) {
-    int level = lua_tointeger(L, -1);
-    if (level > 1) {
-      int len = luaG_stripdebug(L, f, level, 1);
-      UNUSED(len);
-    }
-  }
+  level = lua_isnil(L, -1) ? LUA_OPTIMIZE_DEBUG : lua_tointeger(L, -1);
   lua_pop(L, 1);
+  
+  if (level > 1) { 
+    int len = luaG_stripdebug(L, f, level, 1);
+    UNUSED(len);
+  }
 }
 #endif
 
